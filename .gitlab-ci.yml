@@ -1,0 +1,73 @@
+stages:
+  - build
+  - test
+  - docker_build
+  - scan_security
+  - deploy
+  
+
+variables:
+ 
+  DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  TRIVY_NO_PROGRESS: "true"
+  TRIVY_USERNAME: "$CI_REGISTRY_USER"
+  TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
+  TRIVY_AUTH_URL: "$CI_REGISTRY"
+
+
+# build maven
+build:
+    stage: build
+    image: maven:3.9.6-eclipse-temurin-21 
+    script:
+        - echo "verification des dependances"
+        - mvn dependency:tree
+        - echo "nettoyage et telechargement des dependances"
+        - mvn clean package -DskipTests
+        - echo "Construction du JAR"
+        - mvn package -DskipTests
+    artifacts:
+      paths : 
+        - target/*.jar
+
+test: 
+   stage: test 
+   image: maven:3.9.6-eclipse-temurin-21 
+   script:
+     - mvn test 
+
+
+docker-build:
+  # Use the official docker image.
+  image: docker:latest
+  stage: docker_build
+  services:
+    - docker:dind
+  before_script:
+    - echo "connexion gitlab registry"
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - echo "construction de l'image"
+    - docker build --pull -t "$DOCKER_IMAGE_NAME" .
+    - echo "push de l'image"
+    - docker push "$DOCKER_IMAGE_NAME"
+    - |
+      if [[ "$CI_COMMIT_BRANCH" == "$CI_DEFAULT_BRANCH" ]]; then
+        docker tag "$DOCKER_IMAGE_NAME" "$CI_REGISTRY_IMAGE:latest"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
+
+
+scan_security:
+  stage: scan_security
+  image: 
+    name: docker.io/aquasec/trivy:latest
+    entrypoint: [""]
+  script:
+    - trivy --version
+    - trivy clean --scan-cache
+    - time trivy image --download-db-only
+    - time trivy image --exit-code 0 --format template --template "@/contrib/gitlab.tpl" --output "$CI_PROJECT_DIR/scanning-report.json" "$DOCKER_IMAGE_NAME" 
+  artifacts:
+    reports:
+      container_scanning: $CI_PROJECT_DIR/scanning-report.json
