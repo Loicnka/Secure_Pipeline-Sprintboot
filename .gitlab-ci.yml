@@ -15,7 +15,12 @@ variables:
   TRIVY_AUTH_URL: "$CI_REGISTRY"
   KUBECONFIG: $CI_PROJECT_DIR/kubeconfig
 
-# build maven
+include:
+
+  - template: Jobs/Dependency-Scanning.gitlab-ci.yml
+  - template: Jobs/SAST.gitlab-ci.yml
+  
+  # build maven
 build:
     stage: build
     image: maven:3.9.6-eclipse-temurin-21 
