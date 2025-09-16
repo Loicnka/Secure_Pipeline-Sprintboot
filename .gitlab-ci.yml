@@ -13,7 +13,7 @@ variables:
   TRIVY_USERNAME: "$CI_REGISTRY_USER"
   TRIVY_PASSWORD: "$CI_REGISTRY_PASSWORD"
   TRIVY_AUTH_URL: "$CI_REGISTRY"
-
+  KUBECONFIG: $CI_PROJECT_DIR/kubeconfig
 
 # build maven
 build:
@@ -71,3 +71,15 @@ scan_security:
   artifacts:
     reports:
       container_scanning: $CI_PROJECT_DIR/scanning-report.json
+
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "$KUBE_CONFIG_DATA" | base64 -d > "$KUBECONFIG"
+    - kubectl --kubeconfig=$KUBECONFIG set image deployment/demo-deployment demo-container="$DOCKER_IMAGE_NAME"
+    - kubectl --kubeconfig=$KUBECONFIG rollout status deployment/demo-deployment
+    - kubectl config set-context --current --namespace=demo
+    - kubectl get deployments
+  only:
+    - main
